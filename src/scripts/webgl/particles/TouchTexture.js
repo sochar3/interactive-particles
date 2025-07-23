@@ -5,9 +5,9 @@ import { easeOutQuad, easeInOutQuad, easeOutSine, easeInOutSine } from '../../ut
 export default class TouchTexture {
 	constructor(parent) {
 		this.parent = parent;
-		this.size = 64;
-		this.maxAge = 120;
-		this.radius = 0.15;
+		this.size = 128; // increased resolution for better quality
+		this.maxAge = 180; // longer trail duration
+		this.radius = 0.26; // user specified radius
 		this.trail = [];
 
 		this.initTexture();
@@ -68,19 +68,35 @@ export default class TouchTexture {
 			y: (1 - point.y) * this.size
 		};
 
+		// improved easing for smoother trails
 		let intensity = 1;
-		if (point.age < this.maxAge * 0.3) {
-			intensity = easeOutSine(point.age / (this.maxAge * 0.3), 0, 1, 1);
+		const ageFactor = point.age / this.maxAge;
+		
+		if (ageFactor < 0.2) {
+			// fast fade in
+			intensity = easeOutQuad(ageFactor / 0.2, 0, 1, 1);
+		} else if (ageFactor < 0.7) {
+			// stable phase
+			intensity = 1.0;
 		} else {
-			intensity = easeOutSine(1 - (point.age - this.maxAge * 0.3) / (this.maxAge * 0.7), 0, 1, 1);
+			// smooth fade out
+			intensity = easeInOutSine(1 - (ageFactor - 0.7) / 0.3, 0, 1, 1);
 		}
 
-		intensity *= point.force;
+		// enhance force effect
+		intensity *= Math.min(point.force * 1.5, 1.0);
 
-		const radius = this.size * this.radius * intensity;
-		const grd = this.ctx.createRadialGradient(pos.x, pos.y, radius * 0.25, pos.x, pos.y, radius);
-		grd.addColorStop(0, `rgba(255, 255, 255, 0.2)`);
-		grd.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+		// ensure radius is always positive and has a minimum value
+		const radius = Math.max(this.size * this.radius * intensity, 1.0);
+		
+		// create multi-layer gradient for more visual depth
+		const grd = this.ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
+		const alpha = intensity * 0.4; // increased alpha for stronger effect
+		
+		grd.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+		grd.addColorStop(0.4, `rgba(255, 255, 255, ${alpha * 0.6})`);
+		grd.addColorStop(0.8, `rgba(255, 255, 255, ${alpha * 0.2})`);
+		grd.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
 
 		this.ctx.beginPath();
 		this.ctx.fillStyle = grd;

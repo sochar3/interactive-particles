@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 
 import TouchTexture from './TouchTexture';
-
-const glslify = require('glslify');
+import vertexShader from '../../../shaders/particle.vert';
+import fragmentShader from '../../../shaders/particle.frag';
 
 export default class Particles {
 	
@@ -14,21 +15,30 @@ export default class Particles {
 	init(src) {
 		const loader = new THREE.TextureLoader();
 
-		loader.load(src, (texture) => {
-			this.texture = texture;
-			this.texture.minFilter = THREE.LinearFilter;
-			this.texture.magFilter = THREE.LinearFilter;
-			this.texture.format = THREE.RGBFormat;
+		loader.load(
+			src, 
+			(texture) => {
 
-			this.width = texture.image.width;
-			this.height = texture.image.height;
+				this.texture = texture;
+				this.texture.minFilter = THREE.LinearFilter;
+				this.texture.magFilter = THREE.LinearFilter;
+				this.texture.format = THREE.RGBFormat;
+				this.texture.colorSpace = THREE.SRGBColorSpace; // proper color management
 
-			this.initPoints(true);
-			this.initHitArea();
-			this.initTouch();
-			this.resize();
-			this.show();
-		});
+				this.width = texture.image.width;
+				this.height = texture.image.height;
+
+				this.initPoints(true);
+				this.initHitArea();
+				this.initTouch();
+				this.resize();
+				this.show();
+			},
+			undefined,
+			(error) => {
+				console.error('❌ Failed to load image:', src, error);
+			}
+		);
 	}
 
 	initPoints(discard) {
@@ -59,14 +69,17 @@ export default class Particles {
 				if (originalColors[i * 4 + 0] > threshold) numVisible++;
 			}
 
-			// console.log('numVisible', numVisible, this.numPoints);
+
 		}
 
 		const uniforms = {
 			uTime: { value: 0 },
-			uRandom: { value: 1.0 },
-			uDepth: { value: 2.0 },
-			uSize: { value: 0.0 },
+			uRandom: { value: 2.66 }, // user specified randomness
+			uDepth: { value: 15.0 }, // full depth
+			uSize: { value: 5.0 }, // max size
+			uBrightness: { value: 3.0 }, // max brightness
+			uDensity: { value: 0.98 }, // user specified density
+			uColor: { value: new THREE.Vector3(1.0, 1.0, 0.95) }, // User controllable color (warm white default)
 			uTextureSize: { value: new THREE.Vector2(this.width, this.height) },
 			uTexture: { value: this.texture },
 			uTouch: { value: null },
@@ -74,11 +87,14 @@ export default class Particles {
 
 		const material = new THREE.RawShaderMaterial({
 			uniforms,
-			vertexShader: glslify(require('../../../shaders/particle.vert')),
-			fragmentShader: glslify(require('../../../shaders/particle.frag')),
+			vertexShader,
+			fragmentShader,
 			depthTest: false,
+			depthWrite: false, // performance optimization
 			transparent: true,
-			// blending: THREE.AdditiveBlending
+			blending: THREE.NormalBlending, // normal blending for better visibility
+			vertexColors: false,
+			side: THREE.DoubleSide
 		});
 
 		const geometry = new THREE.InstancedBufferGeometry();
@@ -89,15 +105,15 @@ export default class Particles {
 		positions.setXYZ(1,  0.5,  0.5,  0.0);
 		positions.setXYZ(2, -0.5, -0.5,  0.0);
 		positions.setXYZ(3,  0.5, -0.5,  0.0);
-		geometry.addAttribute('position', positions);
+		geometry.setAttribute('position', positions);
 
 		// uvs
 		const uvs = new THREE.BufferAttribute(new Float32Array(4 * 2), 2);
-		uvs.setXYZ(0,  0.0,  0.0);
-		uvs.setXYZ(1,  1.0,  0.0);
-		uvs.setXYZ(2,  0.0,  1.0);
-		uvs.setXYZ(3,  1.0,  1.0);
-		geometry.addAttribute('uv', uvs);
+		uvs.setXY(0,  0.0,  0.0);
+		uvs.setXY(1,  1.0,  0.0);
+		uvs.setXY(2,  0.0,  1.0);
+		uvs.setXY(3,  1.0,  1.0);
+		geometry.setAttribute('uv', uvs);
 
 		// index
 		geometry.setIndex(new THREE.BufferAttribute(new Uint16Array([ 0, 2, 1, 2, 3, 1 ]), 1));
@@ -119,9 +135,9 @@ export default class Particles {
 			j++;
 		}
 
-		geometry.addAttribute('pindex', new THREE.InstancedBufferAttribute(indices, 1, false));
-		geometry.addAttribute('offset', new THREE.InstancedBufferAttribute(offsets, 3, false));
-		geometry.addAttribute('angle', new THREE.InstancedBufferAttribute(angles, 1, false));
+		geometry.setAttribute('pindex', new THREE.InstancedBufferAttribute(indices, 1, false));
+		geometry.setAttribute('offset', new THREE.InstancedBufferAttribute(offsets, 3, false));
+		geometry.setAttribute('angle', new THREE.InstancedBufferAttribute(angles, 1, false));
 
 		this.object3D = new THREE.Mesh(geometry, material);
 		this.container.add(this.object3D);
@@ -168,23 +184,42 @@ export default class Particles {
 		this.object3D.material.uniforms.uTime.value += delta;
 	}
 
-	show(time = 1.0) {
-		// reset
-		TweenLite.fromTo(this.object3D.material.uniforms.uSize, time, { value: 0.5 }, { value: 1.5 });
-		TweenLite.to(this.object3D.material.uniforms.uRandom, time, { value: 2.0 });
-		TweenLite.fromTo(this.object3D.material.uniforms.uDepth, time * 1.5, { value: 40.0 }, { value: 4.0 });
+	show(time = 1.4) {
+		// dramatic entrance animation with user-preferred final values
+		gsap.fromTo(this.object3D.material.uniforms.uSize, 
+			{ value: 0.1 }, 
+			{ value: 5.0, duration: time, ease: "power3.out" } // max size
+		);
+		gsap.to(this.object3D.material.uniforms.uRandom, 
+			{ value: 2.66, duration: time * 0.9, ease: "power2.inOut" } // user specified randomness
+		);
+		gsap.fromTo(this.object3D.material.uniforms.uDepth, 
+			{ value: 40.0 }, 
+			{ value: 15.0, duration: time * 2.0, ease: "power3.inOut" } // full depth
+		);
 
 		this.addListeners();
 	}
 
 	hide(_destroy, time = 0.8) {
 		return new Promise((resolve, reject) => {
-			TweenLite.to(this.object3D.material.uniforms.uRandom, time, { value: 5.0, onComplete: () => {
-				if (_destroy) this.destroy();
-				resolve();
-			} });
-			TweenLite.to(this.object3D.material.uniforms.uDepth, time, { value: -20.0, ease: Quad.easeIn });
-			TweenLite.to(this.object3D.material.uniforms.uSize, time * 0.8, { value: 0.0 });
+			gsap.to(this.object3D.material.uniforms.uRandom, { 
+				value: 5.0, 
+				duration: time,
+				onComplete: () => {
+					if (_destroy) this.destroy();
+					resolve();
+				}
+			});
+			gsap.to(this.object3D.material.uniforms.uDepth, { 
+				value: -20.0, 
+				duration: time,
+				ease: "power2.in"
+			});
+			gsap.to(this.object3D.material.uniforms.uSize, { 
+				value: 0.0, 
+				duration: time * 0.8
+			});
 
 			this.removeListeners();
 		});

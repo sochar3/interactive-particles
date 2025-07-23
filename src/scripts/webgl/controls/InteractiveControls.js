@@ -29,6 +29,9 @@ export default class InteractiveControls extends EventEmitter {
 
 		this.browser = browser();
 
+		// Initialize rect to prevent undefined errors
+		this.resize();
+
 		this.enable();
 	}
 

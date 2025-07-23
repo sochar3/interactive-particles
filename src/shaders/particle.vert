@@ -15,6 +15,7 @@ uniform float uTime;
 uniform float uRandom;
 uniform float uDepth;
 uniform float uSize;
+uniform float uDensity;
 uniform vec2 uTextureSize;
 uniform sampler2D uTexture;
 uniform sampler2D uTouch;
@@ -37,27 +38,57 @@ void main() {
 
 	// pixel color
 	vec4 colA = texture2D(uTexture, puv);
-	float grey = colA.r * 0.21 + colA.g * 0.71 + colA.b * 0.07;
+	float grey = dot(colA.rgb, vec3(0.2126, 0.7152, 0.0722)); // proper luminosity
 
 	// displacement
 	vec3 displaced = offset;
-	// randomise
-	displaced.xy += vec2(random(pindex) - 0.5, random(offset.x + pindex) - 0.5) * uRandom;
-	float rndz = (random(pindex) + snoise_1_2(vec2(pindex * 0.1, uTime * 0.1)));
-	displaced.z += rndz * (random(pindex) * 2.0 * uDepth);
+	
+	// improved randomization with multiple noise layers - affected by density
+	vec2 noiseCoord = vec2(pindex * 0.01 * uDensity, uTime * 0.15);
+	float noise1 = snoise2(noiseCoord);
+	float noise2 = snoise2(noiseCoord * 2.0) * 0.5;
+	float combinedNoise = noise1 + noise2;
+	
+	// randomise with smoother distribution - density affects spacing
+	float densityEffect = mix(0.5, 1.5, uDensity);
+	displaced.xy += vec2(
+		random(pindex) - 0.5 + combinedNoise * 0.3,
+		random(offset.x + pindex) - 0.5 + combinedNoise * 0.2
+	) * uRandom * densityEffect;
+	
+	// enhanced z displacement with breathing effect - density affects depth variation
+	float rndz = (random(pindex) + combinedNoise);
+	float breathe = sin(uTime * 0.8 + pindex * 0.05) * 0.3;
+	displaced.z += rndz * (random(pindex) * 1.5 * uDepth * uDensity) + breathe;
+	
 	// center
 	displaced.xy -= uTextureSize * 0.5;
 
-	// touch
+	// enhanced touch interaction
 	float t = texture2D(uTouch, puv).r;
-	displaced.z += t * 20.0 * rndz;
-	displaced.x += cos(angle) * t * 20.0 * rndz;
-	displaced.y += sin(angle) * t * 20.0 * rndz;
+	float touchStrength = t * t; // quadratic for more dramatic effect
+	
+	// create radial displacement from touch point
+	float displacement = touchStrength * 35.0 * rndz;
+	displaced.z += displacement;
+	
+	// add rotational movement around touch point
+	float rotationForce = touchStrength * 25.0;
+	displaced.x += cos(angle + uTime * 2.0) * rotationForce * rndz;
+	displaced.y += sin(angle + uTime * 2.0) * rotationForce * rndz;
 
-	// particle size
-	float psize = (snoise_1_2(vec2(uTime, pindex) * 0.5) + 2.0);
-	psize *= max(grey, 0.2);
+	// balanced particle size for realistic but visible density variation
+	float brightness = pow(grey, 0.7); // gamma correction for better contrast
+	
+	// balanced size scaling for density variation - density affects size variation
+	float psize = 1.2 + (snoise2(vec2(pindex * 0.01, uTime * 0.1)) + 1.0) * 0.2 * uDensity;
+	
+	// quadratic scaling creates good size differences without going too extreme
+	psize *= brightness * brightness; // quadratic scaling for good contrast
 	psize *= uSize;
+	
+	// reasonable minimum size to maintain visibility - affected by density
+	psize = max(psize, uSize * 0.15 * uDensity);
 
 	// final position
 	vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);

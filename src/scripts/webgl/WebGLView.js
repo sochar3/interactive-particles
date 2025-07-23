@@ -1,10 +1,8 @@
 import 'three';
-import { TweenLite } from 'gsap/TweenMax';
+import { gsap } from 'gsap';
 
 import InteractiveControls from './controls/InteractiveControls';
 import Particles from './particles/Particles';
-
-const glslify = require('glslify');
 
 export default class WebGLView {
 
@@ -12,11 +10,8 @@ export default class WebGLView {
 		this.app = app;
 
 		this.samples = [
-			'images/sample-01.png',
-			'images/sample-02.png',
-			'images/sample-03.png',
-			'images/sample-04.png',
-			'images/sample-05.png',
+			
+			'images/final.png', // Your logo
 		];
 
 		this.initThree();
@@ -30,6 +25,7 @@ export default class WebGLView {
 	initThree() {
 		// scene
 		this.scene = new THREE.Scene();
+		this.scene.background = new THREE.Color(0x1a1a1a); // Dark background with better contrast
 
 		// camera
 		this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
@@ -37,9 +33,17 @@ export default class WebGLView {
 
 		// renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        
+        // proper color management
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.renderer.toneMapping = THREE.NoToneMapping;
 
         // clock
 		this.clock = new THREE.Clock(true);
+		
+
 	}
 
 	initControls() {
@@ -82,6 +86,11 @@ export default class WebGLView {
 	next() {
 		if (this.currSample < this.samples.length - 1) this.goto(this.currSample + 1);
 		else this.goto(0);
+	}
+
+	// Quick access to your logo (assuming it's the last item)
+	showLogo() {
+		this.goto(this.samples.length - 1);
 	}
 
 	// ---------------------------------------------------------------------------------------------
